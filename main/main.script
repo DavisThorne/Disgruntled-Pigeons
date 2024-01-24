@@ -1,0 +1,102 @@
+local BG_COLOR = vmath.vector4(213/255, 237/255, 246/255, 1)
+local WIDTH = tonumber(sys.get_config("display.width"))
+local HEIGHT = tonumber(sys.get_config("display.height"))
+
+function init(self)
+	-- acquiring the needed focus of components
+	msg.post(".", "acquire_input_focus") -- makes sure input is focused on this script
+	msg.post("camera", "acquire_camera_focus") -- makes sure the camera is focused on this script
+	
+	-- disabling physics 
+	msg.post("#collisionobject", "disable")
+
+	-- storing the initial rotation and position of bird to be used as "respawn" point and orientation
+	self.initial_rotation = go.get_rotation()
+	self.inital_pos = go.get_position()
+
+	-- storing initial camera offset from bird
+	self.camera_offset = go.get_world_position() - go.get_world_position("camera")
+
+	-- the desired position of camera to tween to every frame when tracking flung bird
+	self.camera_desired_pos = go.get_position("camera")
+
+	-- setting base camera zoom
+	self.camera_zoom = 1
+
+	-- initialising global variables these get edited during runtime
+	self.flinging = false -- true if currently flinging
+	self.aiming = false -- true if currently aiming
+	self.panning = false -- true if currently panning around the level
+	self.idle_frames = 0-- the number of frames where the flung bird has been idle
+	self.score = 0 -- current score initilised to be 0
+	self.lives = 5 -- current lives initialised to be 5
+	self.pigs_list = {} -- list of all registered pigs
+end
+
+function final(self)
+	-- posting a message to release focuses set in init
+	msg.post(".", "release_input_focus")
+	msg.post("camera", "release_camera_focus")
+end
+
+function get_bounds(self) -- function to get the bounds of the game
+	local pos = go.get_world_position()
+	local bounds = vmath.vector4(pos.x - (WIDTH / 2), pos.y - (HEIGHT / 2), pos.x + (WIDTH / 2), pos.y + (HEIGHT / 2)) -- setting the as a vector4 by setting the x, y, z and w values
+																													   -- by editing pos values by game size
+	for pig, alive in pairs(self.pigs_list) do -- for loop that iterates between every registered pig in self.pigs_list
+		if alive then -- checks if the pig is alive 
+			local pig_pos = go.get_world_position(pig) -- sets pig_pos of current pig in iterator
+			bounds.x = math.min(bounds.x, pig_pos.x) -- changed bounds.x to be the smaller value between bounds.x and pig_pos.x
+			bounds.z = math.max(bounds.z, pig_pos.x) -- changes bounds.z to be the bigger value between bounds.z and pig_pos.x
+			bounds.y = math.min(bounds.y, pig_pos.y)
+			bounds.w = math.max(bounds.w, pig_pos.y)
+		end
+	end
+	return bounds
+end
+
+function update(self, dt)
+	-- sending request to renderer every frame 
+	msg.post("@render", "clear_color", {color = BG_COLOR}) -- requests renderer to set area where there is no rendered object to be background color 
+	msg.post("@render", "set_zoom", {zoom = self.camera_zoom}) -- requests renderer to set the camera zoom to be the value of self.camera_zoom
+
+	local desired_zoom = math.max(1, math.min(1.5, math.sqrt(go.get_position().x / self.initial_position.x))) -- setting the desired zoom level for flying
+	if self.flinging then -- checks if a bird is currently flying
+		local bounds = get_bounds(self)
+		desired_zoom = (bounds.z - bounds.x) / WIDTH
+		self.camera_desired_pos = vmath.vector3(bounds.x + ((bounds.z - bounds.x) * 0.25), go.get_position().y, 0) - self.camera_offset
+	end
+end
+
+function fixed_update(self, dt)
+	-- This function is called if 'Fixed Update Frequency' is enabled in the Engine section of game.project
+	-- Can be coupled with fixed updates of the physics simulation if 'Use Fixed Timestep' is enabled in
+	-- Physics section of game.project
+	-- Add update code here
+	-- Learn more: https://defold.com/manuals/script/
+	-- Remove this function if not needed
+end
+
+function on_message(self, message_id, message, sender)
+	-- Add message-handling code here
+	-- Learn more: https://defold.com/manuals/message-passing/
+	-- Remove this function if not needed
+end
+
+function on_input(self, action_id, action)
+	-- Add input-handling code here. The game object this script is attached to
+	-- must have acquired input focus:
+	--
+	--    msg.post(".", "acquire_input_focus")
+	--
+	-- All mapped input bindings will be received. Mouse and touch input will
+	-- be received regardless of where on the screen it happened.
+	-- Learn more: https://defold.com/manuals/input/
+	-- Remove this function if not needed
+end
+
+function on_reload(self)
+	-- Add reload-handling code here
+	-- Learn more: https://defold.com/manuals/hot-reload/
+	-- Remove this function if not needed
+end

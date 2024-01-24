@@ -1,0 +1,18 @@
+[bootstrap]
+main_collection = /main/main.collectionc
+render = /rendercam/rendercam.renderc
+
+[script]
+shared_state = 1
+
+[display]
+width = 980
+height = 640
+
+[android]
+input_method = HiddenInputField
+
+[project]
+title = Disgruntled Pigeons
+dependencies#0 = https://github.com/rgrams/rendercam/archive/refs/tags/1.0.3.zip
+
