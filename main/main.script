@@ -12,7 +12,7 @@ function init(self)
 
 	-- storing the initial rotation and position of bird to be used as "respawn" point and orientation
 	self.initial_rotation = go.get_rotation()
-	self.inital_pos = go.get_position()
+	self.initial_pos = go.get_position()
 
 	-- storing initial camera offset from bird
 	self.camera_offset = go.get_world_position() - go.get_world_position("camera")
@@ -43,7 +43,7 @@ function get_bounds(self) -- function to get the bounds of the game
 	local pos = go.get_world_position()
 	local bounds = vmath.vector4(pos.x - (WIDTH / 2), pos.y - (HEIGHT / 2), pos.x + (WIDTH / 2), pos.y + (HEIGHT / 2)) -- setting the as a vector4 by setting the x, y, z and w values
 																													   -- by editing pos values by game size
-	for pig, alive in pairs(self.pigs_list) do -- for loop that iterates between every registered pig in self.pigs_list
+	for pig,alive in pairs(self.pigs_list) do -- for loop that iterates between every registered pig in self.pigs_list
 		if alive then -- checks if the pig is alive 
 			local pig_pos = go.get_world_position(pig) -- sets pig_pos of current pig in iterator
 			bounds.x = math.min(bounds.x, pig_pos.x) -- changed bounds.x to be the smaller value between bounds.x and pig_pos.x
@@ -57,42 +57,127 @@ end
 
 function update(self, dt)
 	-- sending request to renderer every frame 
-	msg.post("@render", "clear_color", {color = BG_COLOR}) -- requests renderer to set area where there is no rendered object to be background color 
-	msg.post("@render", "set_zoom", {zoom = self.camera_zoom}) -- requests renderer to set the camera zoom to be the value of self.camera_zoom
+	msg.post("@render:", "clear_color", {color = BG_COLOR}) -- requests renderer to set area where there is no rendered object to be background color 
+	msg.post("@render:", "set_zoom", {zoom = self.camera_zoom}) -- requests renderer to set the camera zoom to be the value of self.camera_zoom
 
-	local desired_zoom = math.max(1, math.min(1.5, math.sqrt(go.get_position().x / self.initial_position.x))) -- setting the desired zoom level for flying
+	print(self.camera_zoom)
+	
+	local desired_zoom = math.max(1, math.min(1.5, math.sqrt(go.get_position().x / self.initial_pos.x))) -- setting the desired zoom level for flying
 	if self.flinging then -- checks if a bird is currently flying
-		local bounds = get_bounds(self)
-		desired_zoom = (bounds.z - bounds.x) / WIDTH
-		self.camera_desired_pos = vmath.vector3(bounds.x + ((bounds.z - bounds.x) * 0.25), go.get_position().y, 0) - self.camera_offset
+		local bounds = get_bounds(self) 
+		desired_zoom = (bounds.z - bounds.x) / WIDTH --setting the desired zoom of the camera to be the subtraction of x and y bounds divided by screen width
+		self.camera_desired_pos = vmath.vector3(bounds.x + ((bounds.z - bounds.x) * 0.25), go.get_position().y, 0) - self.camera_offset --updating object global variable with the new value
+	end
+
+	self.camera_zoom = self.camera_zoom + (desired_zoom - self.camera_zoom) * 0.05 --setting the camera zoom 
+	go.set_position(vmath.lerp(0.1, go.get_position("camera"), self.camera_desired_pos), "camera") -- linearly interpolates with time of 0.1seconds between current pos of the camera to its desired position
+	msg.post("@render:", "set_zoom", { zoom = self.camera_zoom }) -- tells the renderer to set the cameras zoom 
+
+	if self.flinging then
+		-- getting the birds linear velocity and anglar speed (rotational speed)
+		local linear_velocity = go.get("#collisionobject", "linear_velocity")
+		local rotational_velocity = go.get("#collisionobject", "angular_velocity")
+		
+		if vmath.length(linear_velocity) < 50 and vmath.length(rotational_velocity) < 50 then
+			self.idle_frames = self.idle_frames + 1 -- adding onto the idle frames counter every frame where both velocities less than 5
+			if self.idle_frames > 60 then -- checks if bird has been idle for 60 frames 
+				msg.post("#collisionobject", "disable")
+				self.lives = self.lives - 1
+				--msg.post("#gui"), "update_lives", {lives = self.lives})
+				if self.lives > 0 then -- if lives remaining greater than 0 reset bird position to initial position
+					msg.post(".", "acquire_input_focus")
+					go.set_position(self.initial_pos)
+					go.set_rotation(self.initial_rotation)
+				else
+					-- msg.post("#gui", "out_of_lives")
+				end
+				self.flinging = false
+				self.camera_desired_pos = self.initial_pos - self.camera_offset
+			end
+		else
+			self.idle_frames = 0
+		end
 	end
 end
 
-function fixed_update(self, dt)
-	-- This function is called if 'Fixed Update Frequency' is enabled in the Engine section of game.project
-	-- Can be coupled with fixed updates of the physics simulation if 'Use Fixed Timestep' is enabled in
-	-- Physics section of game.project
-	-- Add update code here
-	-- Learn more: https://defold.com/manuals/script/
-	-- Remove this function if not needed
-end
 
 function on_message(self, message_id, message, sender)
-	-- Add message-handling code here
-	-- Learn more: https://defold.com/manuals/message-passing/
-	-- Remove this function if not needed
+	-- the destroyed block message is posted from a blocks script stating it has been destroyed
+	if message_id == hash("destroyed_block") then 
+		self.score = self.score + message.score
+		-- checks if the destroyed block was a pig if it is we flag that hippo as dead
+		if self.pigs_list[message_id] then
+			self.pigs_list[message_id] = false
+			for pigs,alive in pairs(self.pigs_list) do
+				if alive then
+					return
+				end
+			end
+			--msg.post("#gui", "all_pigs_dead") posting a message to the gui to say thatt all pigs are dead
+		end
+	-- adding a registerd pig to the pigs list
+	elseif message_id == hash("register_pig") then
+		self.pigs_list[message.id] = true
+	end
 end
 
 function on_input(self, action_id, action)
-	-- Add input-handling code here. The game object this script is attached to
-	-- must have acquired input focus:
-	--
-	--    msg.post(".", "acquire_input_focus")
-	--
-	-- All mapped input bindings will be received. Mouse and touch input will
-	-- be received regardless of where on the screen it happened.
-	-- Learn more: https://defold.com/manuals/input/
-	-- Remove this function if not needed
+	local action_pos = vmath.vector3(action.x, action.y, 0)
+	--print(action_pos)
+	if action_id == hash("physicsDebug") then
+		msg.post("#collisionobject", "enable")
+
+	elseif action_id == hash("touch") then
+		if action.pressed then
+			if vmath.length(action_pos + go.get_world_position("camera") - go.get_world_position()) < 50 then -- checking if we clicked the bird or the screen
+				self.aiming = true -- if we were close enough to bird set the aiming property to true
+				self.pressed_position = action_pos
+
+			else 
+				self.panning = true
+				self.pressed_position = action_pos
+				self.pressed_camera_position = go.get_world_position("camera")	
+			end	
+		elseif action.released then 
+			if self.aiming then
+				local direction = self.initial_pos - go.get_position()
+				msg.post("#collisionobject", "enable")
+				msg.post("#collisionobject", "apply_force", { force = direction * 950 * go.get("#collisionobject", "mass"), position = go.get_world_position() })
+				msg.post(".", "release_input_focus")
+				self.flinging = true
+				self.aiming = false
+				self.idle_frames = 0
+				self.pressed_position = nil
+			else
+				self.panning = false
+			end
+
+			-- SOMETHING CAUSES BIRD TO SNAP TO CIRCLE WITH RADIUS OF max_distance
+		elseif self.aiming then -- calculating distance moved from press location
+			local dx = self.pressed_position.x - action_pos.x
+			local dy = self.pressed_position.y - action_pos.y
+			local radians = math.atan2(dy, dx) -- fixed error by swapping these values
+			local cos = math.cos(radians)
+			local sin = math.sin(radians)
+			local distance = math.sqrt(dx*dx + dy*dy)
+			local max_distance = 120
+
+			-- limit the distance moved to below a threshold
+			if distance > max_distance then
+				dx = cos * max_distance
+				dy = sin * max_distance
+				distance = max_distance
+			end
+			go.set_position(vmath.vector3(self.initial_pos.x - dx, self.initial_pos.y - dy, self.initial_pos.z))
+
+			-- camera panning code, getting distance traveled while pressed
+		elseif self.panning then
+			local delta = self.pressed_position - action_pos
+			local pos = self.pressed_camera_position + delta
+			pos.x = math.min(4000, math.max(-4000, pos.x))
+			self.camera_desired_pos = pos
+		end
+	end
 end
 
 function on_reload(self)

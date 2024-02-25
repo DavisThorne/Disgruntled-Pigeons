@@ -1,0 +1,76 @@
+go.property("durability", 200) -- the ammount of damage that the block can take before breaking
+go.property("undamaged", hash("elementStone011")) -- sprite for undamaged
+go.property("damaged", hash("elementStone014"))	-- sprite for damaged
+go.property("almost_destroyed", hash("elementStone046")) -- sprite for almost destroyed
+go.property("debris", false) -- if when broken the object will spawn debris
+
+local COLLISION_RESPONSE = hash("collision_response")
+local GROUND = hash("ground")
+
+function init(self)
+	self.mass = go.get("#collisionobject", "mass") -- getting the mass of the object and stroing it globaly 
+	self.starting_durability = self.durability -- setting the initial durability from the go property
+	self.damage_levels = { self.almost_destroyed, self.damaged, self.undamaged } -- ordered list of all damage levels	
+end
+
+function update(self, dt)
+	-- Add update code here
+	-- Learn more: https://defold.com/manuals/script/
+	-- Remove this function if not needed
+end
+
+function on_message(self, message_id, message, sender)
+	if message_id == COLLISION_RESPONSE then
+		local other_url = msg.url(nil, message.other_id, "collisionobject")
+		local other_velocity = vmath.length(go.get(other_url, "linear_velocity"))
+		local other_mass = go.get(other_url, "mass")
+
+		local velocity = other_velocity
+		if message.group == GROUND then
+			velocity = vmath.length(go.get("#collisionobject", "linear_velocity"))
+			other_mass = 1000
+		end
+
+
+		if velocity > 25 then
+			local damage = velocity * 0.01 * self.mass / other_mass
+			self.durability = self.durability - damage
+
+			if self.durability <= 0 then
+				msg.post("bird", "destroyed_block", { score = math.ceil(self.mass / 10) * 10, group = message.group, id = go.get_id() })
+				msg.post(".", "destroyed")
+				go.delete()
+				if self.debris then
+					for i = 1, 5 do
+						local pos = go.get_world_position() + vmath.vector3(math.random(-30, 30), math.random(-30, 30), 0)
+						local rot = vmath.quat_rotation_z(math.rad(math.random(360)))
+						local scale = math.random(5, 8) / 10
+						factory.create("#factory", pos, rot, {}, scale)
+					end
+					self.debris = false
+				end
+			else
+				local damage = math.ceil(3 * self.durability / self.starting_durability)
+				--msg.post("#sprite", "play_animation", { id = self.damage_levels[damage_level] })
+			end
+		end
+	end
+end
+
+function on_input(self, action_id, action)
+	-- Add input-handling code here. The game object this script is attached to
+	-- must have acquired input focus:
+	--
+	--    msg.post(".", "acquire_input_focus")
+	--
+	-- All mapped input bindings will be received. Mouse and touch input will
+	-- be received regardless of where on the screen it happened.
+	-- Learn more: https://defold.com/manuals/input/
+	-- Remove this function if not needed
+end
+
+function on_reload(self)
+	-- Add reload-handling code here
+	-- Learn more: https://defold.com/manuals/hot-reload/
+	-- Remove this function if not needed
+end
